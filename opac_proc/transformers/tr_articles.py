@@ -178,8 +178,10 @@ class ArticleTransformer(BaseTransformer):
             assets_items[lang] = asset.data
             if asset.is_registered_url:
                 texts_info.delete()
-            
+                
         self.transform_model_instance['assets']['pdf'] = assets_items
+        self.transform_model_instance['assets']['media'] = self.media(source_files)
+
         # pid
         if hasattr(xylose_article, 'publisher_id'):
             self.transform_model_instance['pid'] = xylose_article.publisher_id
@@ -197,3 +199,21 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['elocation'] = xylose_article.elocation
 
         return self.transform_model_instance
+
+    def media(self, source_files):
+        assets = {}
+        for fname, file_fullpath in source_files.media_items.items():
+            name, ext = os.path.splitext(fname)
+            file_metadata = {'filename': fname, 'name': name, 'ext': ext}
+
+            metadata = source_files.article_metadata.copy()
+            metadata.update(file_metadata)
+            
+            asset = assets_handler.Asset(file_fullpath, '', metadata, source_files.bucket_name)
+            asset.register()
+            asset.wait_registration()
+            assets[name] = asset.data
+            assets[name].update({'name': name, 'ext': ext})
+        if len(assets) == 0:
+            assets = {'source path': source_files.media_folder_path}
+        return assets

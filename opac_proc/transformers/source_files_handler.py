@@ -26,28 +26,22 @@ Identify the fulltexts locations from xylose, and create the structure:
 
 class SourceTextFile(object):
 
-    def __init__(self, source_location, journal_folder_name, issue_folder_name, article_folder_name, filename):
+    def __init__(self, source_location, file_folder_path, filename):
         self.source_location = source_location
-        self.journal_folder_name = journal_folder_name
-        self.issue_folder_name = issue_folder_name
-        self.article_folder_name = article_folder_name
+        self.file_folder_path = file_folder_path
         self.filename = filename
         self.is_generated = False
-
-    @property
-    def article_folder_path(self):
-        return '/'.join([config.ASSETS_SOURCE_PATH, self.journal_folder_name, self.issue_folder_name, self.article_folder_name])
 
     @property
     def location(self):
         if os.path.isfile(self.source_location):
             return self.source_location
-        if os.path.isfile(self.article_folder_path + '/' + self.filename):
-            return self.article_folder_path + '/' + self.filename
+        if os.path.isfile(self.file_folder_path + '/' + self.filename):
+            return self.file_folder_path + '/' + self.filename
         if self.source_location.startswith('http'):
-            if download(self.source_location, self.article_folder_path + '/' + self.filename):
+            if download(self.source_location, self.file_folder_path + '/' + self.filename):
                 self.is_generated = True
-                return self.article_folder_path + '/' + self.filename
+                return self.file_folder_path + '/' + self.filename
     
     def delete(self):
         if self.is_generated:
@@ -71,7 +65,18 @@ class SourceFiles(object):
     def setUp(self):
         self._texts_info = self._get_data_from_sgm_version()
         self._texts_info.update(self._get_data_from_sps_version())
-        
+
+    def fullpath(self, folders):
+        return '/'.join([folder for folder in folders if folder is not None])
+
+    @property
+    def pdf_folder_path(self):
+        return self.fullpath([config.ASSETS_PDF_SOURCE_PATH, self.journal_folder_name, self.issue_folder_name])
+
+    @property
+    def media_folder_path(self):
+        return self.fullpath([config.ASSETS_MEDIA_SOURCE_PATH, self.journal_folder_name, self.issue_folder_name])
+
     @property
     def bucket_name(self):
         return '-'.join([self.journal_folder_name, self.issue_folder_name, self.article_folder_name])
@@ -100,9 +105,7 @@ class SourceFiles(object):
                             prefix = lang+'_'
                         fulltext_files[fileformat][lang] = SourceTextFile(
                             url, 
-                            self.journal_folder_name, 
-                            self.issue_folder_name, 
-                            self.article_folder_name, 
+                            self.pdf_folder_path, 
                             prefix + self.article_folder_name + '.' + fileformat)
         return fulltext_files 
 
@@ -115,7 +118,7 @@ class SourceFiles(object):
                     for lang in self.xylose_article.xml_languages():
                         prefix = '' if lang == self.xylose_article.original_language else lang+'_'
                         url = self.pdf_former_url(prefix)
-                        fulltext_files['pdf'][lang] = SourceTextFile(url, self.journal_folder_name, self.issue_folder_name, self.article_folder_name, prefix+self.article_folder_name+'.pdf')
+                        fulltext_files['pdf'][lang] = SourceTextFile(url, self.pdf_folder_path, prefix+self.article_folder_name+'.pdf')
         return fulltext_files
 
     def pdf_former_url(self, lang_prefix):
@@ -126,6 +129,16 @@ class SourceFiles(object):
                     self.issue_folder_name,
                     lang_prefix + self.article_folder_name + '.pdf'
             )
+
+    @property
+    def media_items(self):
+        files = {}
+        if os.path.isdir(self.media_folder_path):
+            files.update({fname: self.media_folder_path + '/' + fname for fname in os.listdir(self.media_folder_path) if fname.startswith(self.article_folder_name)})
+        video_path = self.media_folder_path + '/html'
+        if os.path.isdir(video_path):
+            files.update({fname: video_path + '/' + fname for fname in os.listdir(video_path) if fname.startswith(self.article_folder_name)})
+        return files
 
 
 def py2_get_web_page_content(url):
@@ -148,4 +161,3 @@ def download(url, fullpath):
         
         open(fullpath, 'wb').write(content)
     return os.path.isfile(fullpath)
-
