@@ -14,6 +14,8 @@ from opac_proc.extractors.decorators import update_metadata
 
 from opac_proc.web import config
 from opac_proc.logger_setup import getMongoLogger
+from . import source_files_handler
+from . import assets_handler
 
 if config.DEBUG:
     logger = getMongoLogger(__name__, "DEBUG", "transform")
@@ -158,6 +160,13 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['htmls'] = htmls
             self.transform_model_instance['pdfs'] = pdfs
 
+        self.transform_model_instance['assets'] = {}
+
+        source_files = source_files_handler.SourceFiles(xylose_article)
+
+        if source_files.xml_filename is not None:
+            self.transform_model_instance['assets']['xml'] = self.xml_filename(source_files)
+
         # pid
         if hasattr(xylose_article, 'publisher_id'):
             self.transform_model_instance['pid'] = xylose_article.publisher_id
@@ -175,3 +184,11 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['elocation'] = xylose_article.elocation
 
         return self.transform_model_instance
+
+    def xml_filename(self, source_files):
+        if source_files.xml_filename is not None:
+            file_metadata = source_files.article_metadata
+            asset = assets_handler.Asset(source_files.xml_filename, 'xml', file_metadata, source_files.bucket_name)
+            asset.register()
+            asset.wait_registration()
+            return asset.data
