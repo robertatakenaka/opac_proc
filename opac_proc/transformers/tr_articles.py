@@ -15,6 +15,10 @@ from opac_proc.extractors.decorators import update_metadata
 from opac_proc.web import config
 from opac_proc.logger_setup import getMongoLogger
 
+from . import source_files_handler
+from . import assets_handler
+
+
 if config.DEBUG:
     logger = getMongoLogger(__name__, "DEBUG", "transform")
 else:
@@ -158,6 +162,14 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['htmls'] = htmls
             self.transform_model_instance['pdfs'] = pdfs
 
+
+        self.transform_model_instance['assets'] = {}
+        source_files = source_files_handler.SourceFiles(xylose_article, config.CSS)
+
+        if source_files.generated_html is not None:
+            assets = {}
+            assets['media'] = {}
+            self.transform_model_instance['assets']['generated html'] = self.generated_html(assets.get('media'))
         # pid
         if hasattr(xylose_article, 'publisher_id'):
             self.transform_model_instance['pid'] = xylose_article.publisher_id
@@ -175,3 +187,30 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['elocation'] = xylose_article.elocation
 
         return self.transform_model_instance
+
+    def generated_html(self, media={}):
+        asset_items = {}
+        if source_files.generated_html is not None:
+            for lang, file in source_files.generated_html.items():
+                self.fix_images_path(file, media)
+                metadata = source_files.article_metadata.copy()
+                metadata['lang'] = lang
+                metadata['name'] = os.path.basename(file)
+                asset = assets_handler.Asset(file, 'html', metadata, source_files.bucket_name)
+                asset.register()
+                asset.wait_registration()
+                asset_items[lang] = asset.data
+        return asset_items
+
+    def fix_images_path(self, filename, media):
+        if media is not None:
+            if len(media) > 0:
+                content = open(filename, 'r').read()
+                if not isinstance(content, unicode):
+                    content = content.decode('utf-8')
+                for name, data in media.items():
+                    url = data.get('url')
+                    if url is not None:
+                        content = content.replace(name, data.get('url'))
+                open(filename, 'w').write(content.encode('utf-8'))
+

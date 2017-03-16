@@ -151,3 +151,7 @@ RSS_NEWS_FEEDS = {
         'url': 'http://blog.scielo.org/en/feed/',
     },
 }
+
+ASSETS_SOURCE_PDF_PATH = HERE + '/pdf'
+ASSETS_SOURCE_XML_PATH =  HERE + '/xml'
+CSS = ''
