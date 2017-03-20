@@ -37,7 +37,7 @@ RUN sed -i 's/\r//' /start_worker.sh \
     && chmod -R +x /src/ \
     && chown nobody /start_worker.sh \
     && chown -R nobody /src/
-    
+
 RUN chown -R nobody:nogroup /app
 USER nobody
 

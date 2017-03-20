@@ -1,7 +1,7 @@
-# code = utf-8
+# coding: utf-8
 
 import os
-import urllib
+import urllib2
 
 from opac_proc.web import config
 
@@ -26,31 +26,14 @@ Identify the fulltexts locations from xylose, and create the structure:
 
 class SourceTextFile(object):
 
-    def __init__(self, source_location, file_folder_path, filename):
+    def __init__(self, source_location):
         self.source_location = source_location
-        self.file_folder_path = file_folder_path
-        self.filename = filename
-        self.is_generated = False
 
     @property
     def location(self):
         if os.path.isfile(self.source_location):
             return self.source_location
-        if os.path.isfile(self.file_folder_path + '/' + self.filename):
-            return self.file_folder_path + '/' + self.filename
-        if self.source_location.startswith('http'):
-            if download(self.source_location, self.file_folder_path + '/' + self.filename):
-                self.is_generated = True
-                return self.file_folder_path + '/' + self.filename
     
-    def delete(self):
-        if self.is_generated:
-            if os.path.isfile(self.location):
-                try:
-                    os.unlink(self.location)
-                except:
-                    pass
-
 
 class SourceFiles(object):
 
@@ -65,21 +48,14 @@ class SourceFiles(object):
     def setUp(self):
         self._texts_info = self._get_data_from_sgm_version()
         self._texts_info.update(self._get_data_from_sps_version())
-
-    def fullpath(self, folders):
-        return '/'.join([folder for folder in folders if folder is not None])
-
-    @property
-    def pdf_folder_path(self):
-        return self.fullpath([config.ASSETS_PDF_SOURCE_PATH, self.journal_folder_name, self.issue_folder_name])
-
-    @property
-    def media_folder_path(self):
-        return self.fullpath([config.ASSETS_MEDIA_SOURCE_PATH, self.journal_folder_name, self.issue_folder_name])
-
+        
     @property
     def bucket_name(self):
         return '-'.join([self.journal_folder_name, self.issue_folder_name, self.article_folder_name])
+
+    @property
+    def issue_folder_rel_path(self):
+        return '/'.join([self.journal_folder_name, self.issue_folder_name])
 
     @property
     def article_metadata(self):
@@ -93,42 +69,34 @@ class SourceFiles(object):
     def pdf_files(self):
         return self._texts_info.get('pdf', {})
 
+    @property
+    def pdf_folder_path(self):
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_PDF_PATH, self.issue_folder_rel_path])
+
+    @property
+    def media_folder_path(self):
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH, self.issue_folder_rel_path])
+
     def _get_data_from_sgm_version(self):
         fulltext_files = {}
         if hasattr(self.xylose_article, 'fulltexts'):
-            for fileformat, versions in self.xylose_article.fulltexts().items():
-                fulltext_files[fileformat] = {}
-                for lang, url in versions.items():
-                    if not lang in fulltext_files[fileformat].keys():
-                        prefix = ''
-                        if lang != self.xylose_article.original_language:
-                            prefix = lang+'_'
-                        fulltext_files[fileformat][lang] = SourceTextFile(
-                            url, 
-                            self.pdf_folder_path, 
-                            prefix + self.article_folder_name + '.' + fileformat)
+            pdf_url_items = self.xylose_article.fulltexts().get('pdf')
+            fulltext_files['pdf'] = {}
+            for lang in pdf_url_items.keys():
+                prefix = '' if lang != self.xylose_article.original_language else lang+'_'
+                fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
         return fulltext_files 
 
     def _get_data_from_sps_version(self):
-    	fulltext_files = {}
+        fulltext_files = {}
         if self.xylose_article.data_model_version == 'xml':
             fulltext_files['pdf'] = {}
             if hasattr(self.xylose_article, 'xml_languages'):
                 if self.xylose_article.xml_languages() is not None:
                     for lang in self.xylose_article.xml_languages():
                         prefix = '' if lang == self.xylose_article.original_language else lang+'_'
-                        url = self.pdf_former_url(prefix)
-                        fulltext_files['pdf'][lang] = SourceTextFile(url, self.pdf_folder_path, prefix+self.article_folder_name+'.pdf')
+                        fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
         return fulltext_files
-
-    def pdf_former_url(self, lang_prefix):
-        if self.xylose_article.scielo_domain:
-            return "http://{}/pdf/{}/{}/{}".format(
-                    self.xylose_article.scielo_domain,
-                    self.journal_folder_name,
-                    self.issue_folder_name,
-                    lang_prefix + self.article_folder_name + '.pdf'
-            )
 
     @property
     def media_items(self):
@@ -139,25 +107,3 @@ class SourceFiles(object):
         if os.path.isdir(video_path):
             files.update({fname: video_path + '/' + fname for fname in os.listdir(video_path) if fname.startswith(self.article_folder_name)})
         return files
-
-
-def py2_get_web_page_content(url):
-    req = urllib.urlopen(url)
-    if req is not None:
-        return req.read()
-
-
-def get_web_page_content(url):
-    return py2_get_web_page_content(url)
-
-
-def download(url, fullpath):
-    content = get_web_page_content(url)
-    if content is not None:
-        #import pdb; pdb.set_trace();
-        path = os.path.dirname(fullpath)
-        if not os.path.isdir(path):
-            os.makedirs(path)
-        
-        open(fullpath, 'wb').write(content)
-    return os.path.isfile(fullpath)

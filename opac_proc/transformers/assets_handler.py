@@ -1,3 +1,4 @@
+# coding: utf-8
 
 import os
 import time
@@ -29,19 +30,12 @@ def now():
 
 class Asset(object):
 
-    def __init__(self, file_location, filetype, metadata, bucket_name):
-        self.file_location = file_location
+    def __init__(self, pfile, filetype, metadata, bucket_name):
+        self.pfile = pfile
         self.filetype = filetype
         self.metadata = metadata
         self.bucket_name = bucket_name
-        try:
-            self.pfile = open(file_location, 'rb')
-            #import pdb; pdb.set_trace();
-        except:
-            raise
-
         self.name = self.pfile.name
-        #lang
         self.ID = None
         self.registered_url = None
         self.registration_error = None
@@ -50,6 +44,8 @@ class Asset(object):
         response = client_status()
         if response is True:
             self.metadata['registration-date'] = now()
+            if self.pfile is None:
+                return {'error message': u'Valor inválido de arquivo para registrar em SSM'}
             self._status = 'queued'
             self.ID = cli.add_asset(self.pfile, self.name, self.filetype, self.metadata, self.bucket_name)
         else:
@@ -92,4 +88,3 @@ class Asset(object):
         if self.registration_error is not None:
             result.update({'registration error': self.registration_error})
         return result
-
