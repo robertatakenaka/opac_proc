@@ -79,6 +79,10 @@ class SourceFiles(object):
     def media_folder_path(self):
         return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH, self.issue_folder_rel_path])
 
+    @property
+    def xml_folder_path(self):
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_XML_PATH, self.issue_folder_rel_path])
+
     def _get_data_from_sgm_version(self):
         fulltext_files = {}
         if hasattr(self.xylose_article, 'fulltexts'):
@@ -101,13 +105,15 @@ class SourceFiles(object):
         return fulltext_files
 
     @property
-    def media_items(self):
+    def media_files(self):
         files = {}
         for path in [self.media_folder_path, self.media_folder_path + '/html']:    
             if os.path.isdir(path):
                 files.update({fname: SourceTextFile(path + '/' + fname) for fname in os.listdir(path) if fname.startswith(self.article_folder_name)})
         return files
 
-    def xml_filename(self):
-        return self.xml_folder_path + '/' + self.article_folder_name + '.xml'
+    @property
+    def xml_file(self):
+        if self.xylose_article.data_model_version == 'xml':
+            return SourceTextFile(self.xml_folder_path + '/' + self.article_folder_name + '.xml')
 

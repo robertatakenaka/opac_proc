@@ -171,8 +171,8 @@ class ArticleTransformer(BaseTransformer):
         self.transform_model_instance['assets']['pdf'] = self.assets_pdf(source_files)
         self.transform_model_instance['assets']['media'] = self.assets_media(source_files)
 
-        if source_files.xml_filename is not None:
-            self.transform_model_instance['assets']['xml'] = self.xml_filename(source_files)
+        if source_files.xml_file is not None:
+            self.transform_model_instance['assets']['xml'] = self.assets_xml(source_files)
 
         # pid
         if hasattr(xylose_article, 'publisher_id'):
@@ -213,13 +213,13 @@ class ArticleTransformer(BaseTransformer):
 
     def assets_media(self, source_files):
         assets = {}
-        for fname, source_file in source_files.media_items.items():
+        for fname, source_file in source_files.media_files.items():
             assets[fname] = {}
             file_metadata = {'filename': fname, 'name': source_file.name, 'ext': source_file.ext}
 
             metadata = source_files.article_metadata.copy()
             metadata.update(file_metadata)
-            if source_file.location is not None:
+            if source_file.location is None:
                 asset = {'error message': 'Não encontrado o arquivo {}'.format(source_file.source_location)}
             else:
                 try:
@@ -237,17 +237,33 @@ class ArticleTransformer(BaseTransformer):
             if isinstance(asset, Asset):
                 asset.wait_registration()
                 assets[fname] = asset.data
-                source_file = source_files.media_items.get(fname)
+                source_file = source_files.media_files.get(fname)
                 assets[fname].update({'name': source_files.name, 'ext': source_file.ext})
 
         if len(assets) == 0:
             assets = {'source path': source_files.media_folder_path}
         return assets
 
-    def xml_filename(self, source_files):
-        if source_files.xml_filename is not None:
-            file_metadata = source_files.article_metadata
-            asset = assets_handler.Asset(source_files.xml_filename, 'xml', file_metadata, source_files.bucket_name)
-            asset.register()
-            asset.wait_registration()
-            return asset.data
+    def assets_xml(self, source_files):
+        if source_files.xml_file is None:
+            return None
+        ret = {}
+        file_metadata = {}
+        metadata = source_files.article_metadata.copy()
+        metadata.update(file_metadata)
+        
+        source_file = source_files.xml_file
+        if source_file.location is None:
+            ret = {'error message': u'Não encontrado o arquivo {}'.format(source_file.source_location)}
+        else:
+            try:
+                pfile = open(source_file.location, 'rb')
+            except Exception, e:
+                logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
+                continue
+            else:
+                asset = assets_handler.Asset(pfile, source_file.name, 'xml', metadata, source_files.bucket_name)
+                asset.register()
+                asset.wait_registration()
+                ret = asset.data 
+        return ret
