@@ -1,5 +1,7 @@
 # coding: utf-8
+import os
 from datetime import datetime
+import StringIO
 
 from werkzeug.urls import url_fix
 from xylose.scielodocument import Article
@@ -14,6 +16,12 @@ from opac_proc.extractors.decorators import update_metadata
 
 from opac_proc.web import config
 from opac_proc.logger_setup import getMongoLogger
+from . import source_files_handler
+from . import assets_handler
+
+from . import source_files_handler
+from . import assets_handler
+
 
 from . import source_files_handler
 from . import assets_handler
@@ -162,14 +170,16 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['htmls'] = htmls
             self.transform_model_instance['pdfs'] = pdfs
 
-
-        self.transform_model_instance['assets'] = {}
         source_files = source_files_handler.SourceFiles(xylose_article, config.CSS)
 
-        if source_files.generated_html is not None:
-            assets = {}
-            assets['media'] = {}
-            self.transform_model_instance['assets']['generated html'] = self.generated_html(assets.get('media'))
+        self.transform_model_instance['assets'] = {}
+        self.transform_model_instance['assets']['pdf'] = self.assets_pdf(source_files)
+        self.transform_model_instance['assets']['media'] = self.assets_media(source_files)
+
+        if source_files.xml_file is not None:
+            self.transform_model_instance['assets']['xml'] = self.assets_xml(source_files)
+            self.transform_model_instance['assets']['generated html'] = self.generated_html(self.transform_model_instance['assets']['media'])
+
         # pid
         if hasattr(xylose_article, 'publisher_id'):
             self.transform_model_instance['pid'] = xylose_article.publisher_id
@@ -188,29 +198,114 @@ class ArticleTransformer(BaseTransformer):
 
         return self.transform_model_instance
 
-    def generated_html(self, media={}):
-        asset_items = {}
-        if source_files.generated_html is not None:
-            for lang, file in source_files.generated_html.items():
-                self.fix_images_path(file, media)
-                metadata = source_files.article_metadata.copy()
-                metadata['lang'] = lang
-                metadata['name'] = os.path.basename(file)
-                asset = assets_handler.Asset(file, 'html', metadata, source_files.bucket_name)
+    def assets_pdf(self, source_files):
+        assets_items = {}
+        for lang, texts_info in source_files.pdf_files.items():
+            assets_items[lang] = {'source': texts_info.source_location}
+            file_metadata = {'lang': lang}
+            file_metadata.update(source_files.article_metadata)
+            if texts_info.location is not None:
+                try:
+                    pfile = open(texts_info.location, 'rb')
+                except Exception, e:
+                    logger.error(u'Não foi possível abrir o arquivo {}'.format(texts_info.location))
+                    continue
+                else:
+                    asset = assets_handler.Asset(pfile, texts_info.filename, 'pdf', file_metadata, source_files.bucket_name)
+                    asset.register()
+                    asset.wait_registration()
+                    assets_items[lang] = asset.data
+        return assets_items
+
+    def assets_media(self, source_files):
+        assets = {}
+        for fname, source_file in source_files.media_files.items():
+            assets[fname] = {}
+            file_metadata = {'filename': fname, 'name': source_file.name, 'ext': source_file.ext}
+
+            metadata = source_files.article_metadata.copy()
+            metadata.update(file_metadata)
+            if source_file.location is None:
+                asset = {'error message': 'Não encontrado o arquivo {}'.format(source_file.source_location)}
+            else:
+                try:
+                    pfile = open(source_file.location, 'rb')
+                except Exception, e:
+                    logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
+                    continue
+                else:
+                    asset = assets_handler.Asset(pfile, fname, '', metadata, source_files.bucket_name)
+                    asset.register()
+            assets[fname] = asset
+
+        for fname, asset in assets.items():
+            fname = fname.replace('.', '-DOT-')
+            if isinstance(asset, Asset):
+                asset.wait_registration()
+                assets[fname] = asset.data
+                source_file = source_files.media_files.get(fname)
+                assets[fname].update({'name': source_files.name, 'ext': source_file.ext})
+
+        if len(assets) == 0:
+            assets = {'source path': source_files.media_folder_path}
+        return assets
+
+    def assets_xml(self, source_files):
+        if source_files.xml_file is None:
+            return None
+        ret = {}
+        file_metadata = {}
+        metadata = source_files.article_metadata.copy()
+        metadata.update(file_metadata)
+        
+        source_file = source_files.xml_file
+        if source_file.location is None:
+            ret = {'error message': u'Não encontrado o arquivo {}'.format(source_file.source_location)}
+        else:
+            try:
+                pfile = open(source_file.location, 'rb')
+            except Exception, e:
+                logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
+                continue
+            else:
+                asset = assets_handler.Asset(pfile, source_file.name, 'xml', metadata, source_files.bucket_name)
                 asset.register()
                 asset.wait_registration()
-                asset_items[lang] = asset.data
-        return asset_items
+                ret = asset.data 
+        return ret
 
-    def fix_images_path(self, filename, media):
-        if media is not None:
-            if len(media) > 0:
-                content = open(filename, 'r').read()
-                if not isinstance(content, unicode):
-                    content = content.decode('utf-8')
-                for name, data in media.items():
-                    url = data.get('url')
-                    if url is not None:
-                        content = content.replace(name, data.get('url'))
-                open(filename, 'w').write(content.encode('utf-8'))
+    def generated_html(self, media=None):
+        assets = {}
+        if source_file.generated_html.get('generated htmls error') is not None:
+            assets = source_file.generated_html
+        elif source_file.generated_html.get('generated htmls') is not None:
+            for lang, html in source_files.generated_html.items():
+                assets[lang] = {}
+                if media is not None:
+                    for media_name, media_data in media.items():
+                        url = media_data.get('url')
+                        if url is not None:
+                            href_content = 'href="{}"'.format(media_name.replace('-DOT-', '.'))
+                            ssm_href_content = 'href="{}"'.format(data.get('url'))
+                            content = html.replace(href_content, ssm_href_content)
+                    pfile = StringIO.StringIO(content.encode('utf-8'))
+                        
+                filename = lang+'_'+source_files.article_folder_name + '.html'
+                
+                metadata = source_files.article_metadata.copy()
+                try:
+                    asset = assets_handler.Asset(pfile, filename, 'html', metadata, source_files.bucket_name)
+                except Exception, e:
+                    logger.error(u'Não foi possível ler o arquivo html gerado correspondente a {}'.format(filename))
+                    asset = {'error message': u'html gerado está ilegível'}
+                    continue
+                else:
+                    asset.register()
+                assets[lang] = asset
+
+            for lang, asset in assets.items():
+                if isinstance(asset, Asset):
+                    asset.wait_registration()
+                    assets[lang] = asset.data
+       return assets
 

@@ -3,7 +3,6 @@ import packtools
 
 from lxml import etree
 
-
 class XMLError(Exception):
     """ Represents errors that would block HTMLGenerator instance from
     being created.
@@ -38,16 +37,16 @@ def generate_html(xml, css):
     if html_generator is not None:
         try:
             for lang, trans_result in html_generator:
-                fname, fext = xml.rsplit('.', 1)
-                out_fname = '.'.join([fname, lang, 'html'])
-                files[lang] = out_fname
-                with open(out_fname, 'wb') as fp:
-                    fp.write(etree.tostring(trans_result, pretty_print=True,
+                files[lang] = etree.tostring(trans_result, pretty_print=True,
                                             encoding='utf-8', method='html',
-                                            doctype=u"<!DOCTYPE html>"))
+                                            doctype=u"<!DOCTYPE html>")
+                files[lang] = files[lang].decode('utf-8')
 
         except TypeError as e:
-            error_message = 'Error generating {}. '.format(xml)
+            error_message = 'Error generating html ({}) for {}. '.format(lang, xml)
+        except:
+            error_message = 'Unknown Error generating html ({}) for {}. '.format(lang, xml)
+
     if len(files) > 0:
         return (True, files)
     else:

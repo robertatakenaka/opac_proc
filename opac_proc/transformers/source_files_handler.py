@@ -1,7 +1,6 @@
-# code = utf-8
+# coding: utf-8
 
 import os
-import urllib2
 
 from opac_proc.web import config
 from . import html_generator
@@ -27,36 +26,16 @@ Identify the fulltexts locations from xylose, and create the structure:
 
 class SourceTextFile(object):
 
-    def __init__(self, source_location, journal_folder_name, issue_folder_name, article_folder_name, filename):
+    def __init__(self, source_location):
         self.source_location = source_location
-        self.journal_folder_name = journal_folder_name
-        self.issue_folder_name = issue_folder_name
-        self.article_folder_name = article_folder_name
-        self.filename = filename
-        self.is_generated = False
-
-    @property
-    def article_folder_path(self):
-        return '/'.join([config.ASSETS_SOURCE_PATH, self.journal_folder_name, self.issue_folder_name, self.article_folder_name])
+        self.path = os.path.dirname(source_location)
+        self.filename = os.path.basename(source_location)
+        self.name, self.ext = os.path.splitext(self.filename)
 
     @property
     def location(self):
         if os.path.isfile(self.source_location):
             return self.source_location
-        if os.path.isfile(self.article_folder_path + '/' + self.filename):
-            return self.article_folder_path + '/' + self.filename
-        if self.source_location.startswith('http'):
-            if download(self.source_location, self.article_folder_path + '/' + self.filename):
-                self.is_generated = True
-                return self.article_folder_path + '/' + self.filename
-    
-    def delete(self):
-        if self.is_generated:
-            if os.path.isfile(self.location):
-                try:
-                    os.unlink(self.location)
-                except:
-                    pass
 
 
 class SourceFiles(object):
@@ -79,6 +58,10 @@ class SourceFiles(object):
         return '-'.join([self.journal_folder_name, self.issue_folder_name, self.article_folder_name])
 
     @property
+    def issue_folder_rel_path(self):
+        return '/'.join([self.journal_folder_name, self.issue_folder_name])
+
+    @property
     def article_metadata(self):
         metadata = {}
         metadata['article-folder'] = self.article_folder_name
@@ -90,99 +73,65 @@ class SourceFiles(object):
     def pdf_files(self):
         return self._texts_info.get('pdf', {})
 
-    def fullpath(self, folders):
-        return '/'.join([folder for folder in folders if folder is not None])
-
     @property
     def pdf_folder_path(self):
-        return self.fullpath([config.ASSETS_SOURCE_PDF_PATH, self.journal_folder_name, self.issue_folder_name])
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_PDF_PATH, self.issue_folder_rel_path])
+
+    @property
+    def media_folder_path(self):
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH, self.issue_folder_rel_path])
 
     @property
     def xml_folder_path(self):
-        return self.fullpath([config.ASSETS_SOURCE_XML_PATH, self.journal_folder_name, self.issue_folder_name])
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_XML_PATH, self.issue_folder_rel_path])
 
     def _get_data_from_sgm_version(self):
         fulltext_files = {}
         if hasattr(self.xylose_article, 'fulltexts'):
-            for fileformat, versions in self.xylose_article.fulltexts().items():
-                fulltext_files[fileformat] = {}
-                for lang, url in versions.items():
-                    if not lang in fulltext_files[fileformat].keys():
-                        prefix = ''
-                        if lang != self.xylose_article.original_language:
-                            prefix = lang+'_'
-                        fulltext_files[fileformat][lang] = SourceTextFile(
-                            url, 
-                            self.pdf_folder_path, 
-                            prefix + self.article_folder_name + '.' + fileformat)
+            pdf_url_items = self.xylose_article.fulltexts().get('pdf')
+            fulltext_files['pdf'] = {}
+            for lang in pdf_url_items.keys():
+                prefix = '' if lang != self.xylose_article.original_language else lang+'_'
+                fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
         return fulltext_files 
 
     def _get_data_from_sps_version(self):
-    	fulltext_files = {}
+        fulltext_files = {}
         if self.xylose_article.data_model_version == 'xml':
             fulltext_files['pdf'] = {}
             if hasattr(self.xylose_article, 'xml_languages'):
                 if self.xylose_article.xml_languages() is not None:
                     for lang in self.xylose_article.xml_languages():
                         prefix = '' if lang == self.xylose_article.original_language else lang+'_'
-                        url = self.pdf_former_url(prefix)
-                        fulltext_files['pdf'][lang] = SourceTextFile(url, self.pdf_folder_path, prefix+self.article_folder_name+'.pdf')
+
+                        fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
         return fulltext_files
 
-    def pdf_former_url(self, lang_prefix):
-        if self.xylose_article.scielo_domain:
-            return "http://{}/pdf/{}/{}/{}".format(
-                    self.xylose_article.scielo_domain,
-                    self.journal_folder_name,
-                    self.issue_folder_name,
-                    lang_prefix + self.article_folder_name + '.pdf'
-            )
+    @property
+    def media_files(self):
+        files = {}
+        for path in [self.media_folder_path, self.media_folder_path + '/html']:    
+            if os.path.isdir(path):
+                files.update({fname: SourceTextFile(path + '/' + fname) for fname in os.listdir(path) if fname.startswith(self.article_folder_name)})
+        return files
 
     @property
-    def xml_filename(self):
+    def xml_file(self):
         if self.xylose_article.data_model_version == 'xml':
-            f = self.xml_folder_path + '/' + self.article_folder_name + '.xml'
-            if os.path.isfile(f):
-                return f
+            return SourceTextFile(self.xml_folder_path + '/' + self.article_folder_name + '.xml')
 
     def generate_html(self):
-        if self.xml_filename is not None:
-            result, response = generate_html.generate_html(self.xml_filename, self.css)
-            if result is True:
-                self._generated_html = response
+        self._generated_html = None
+        if self.xml_file is not None:
+            generated, result = html_generator.generate_html(self.xml_file.location, self.css)
+            self._generated_html = {}
+            if generated is True:
+                self._generated_html['generated htmls'] = result
+            else:
+                self._generated_html['generated html errors'] = result
 
     @property
     def generated_html(self):
         if self._generated_html is None:
             self.generate_html()
         return self._generated_html
-
-
-def get_web_page_content(url, timeout=30):
-    response = None
-    req = urllib2.Request(url)
-    error_message = ''
-    try:
-        response = urllib2.urlopen(req, timeout=timeout).read()
-    except urllib2.HTTPError as e:
-        if e.code == 407:
-        error_message = e.read()
-    except urllib2.URLError as e:
-        error_message = 'URLError'
-    except urllib2.socket.timeout:
-        error_message = 'Time out!'
-    except Exception as e:
-        error_message = 'Unknown!'
-    return (response, error_message)
-
-
-def download(url, fullpath):
-    content, error_message = get_web_page_content(url)
-    if content is not None:
-        path = os.path.dirname(fullpath)
-        if not os.path.isdir(path):
-            os.makedirs(path)
-        
-        open(fullpath, 'wb').write(content)
-    return os.path.isfile(fullpath)
-

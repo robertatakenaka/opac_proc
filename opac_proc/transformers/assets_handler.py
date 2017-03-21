@@ -1,3 +1,4 @@
+# coding: utf-8
 
 import os
 import time
@@ -29,18 +30,12 @@ def now():
 
 class Asset(object):
 
-    def __init__(self, file_location, filetype, metadata, bucket_name):
-        self.file_location = file_location
+    def __init__(self, pfile, filename, filetype, metadata, bucket_name):
+        self.pfile = pfile
         self.filetype = filetype
         self.metadata = metadata
         self.bucket_name = bucket_name
-        try:
-            self.pfile = open(file_location, 'rb')
-        except:
-            raise
-
-        self.name = self.pfile.name
-        #lang
+        self.name = filename
         self.ID = None
         self.registered_url = None
         self.registration_error = None
