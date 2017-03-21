@@ -208,28 +208,32 @@ class ArticleTransformer(BaseTransformer):
 
     def assets_media(self, source_files):
         assets = {}
-        items = []
-        for fname, file_fullpath in source_files.media_items.items():
-            name, ext = os.path.splitext(fname)
-            file_metadata = {'filename': fname, 'name': name, 'ext': ext}
+        for fname, source_file in source_files.media_items.items():
+            assets[fname] = {}
+            file_metadata = {'filename': fname, 'name': source_file.name, 'ext': source_file.ext}
 
             metadata = source_files.article_metadata.copy()
             metadata.update(file_metadata)
-            try:
-                pfile = open(file_fullpath, 'rb')
-            except Exception, e:
-                logger.error(u'Não foi possível abrir o arquivo {}'.format(file_fullpath))
-                continue
+            if source_file.location is not None:
+                asset = {'error message': 'Não encontrado o arquivo {}'.format(source_file.source_location)}
             else:
-                asset = assets_handler.Asset(pfile, fname, '', metadata, source_files.bucket_name)
-                asset.register()
-                items.append((asset, fname, {'name': name, 'ext': ext}))
+                try:
+                    pfile = open(source_file.location, 'rb')
+                except Exception, e:
+                    logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
+                    continue
+                else:
+                    asset = assets_handler.Asset(pfile, fname, '', metadata, source_files.bucket_name)
+                    asset.register()
+            assets[fname] = asset
 
-        for asset, fname, file_data in items:
+        for fname, asset in assets.items():
             fname = fname.replace('.', '-DOT-')
-            asset.wait_registration()
-            assets[fname] = asset.data
-            assets[fname].update(file_data)
+            if isinstance(asset, Asset):
+                asset.wait_registration()
+                assets[fname] = asset.data
+                source_file = source_files.media_items.get(fname)
+                assets[fname].update({'name': source_files.name, 'ext': source_file.ext})
 
         if len(assets) == 0:
             assets = {'source path': source_files.media_folder_path}
