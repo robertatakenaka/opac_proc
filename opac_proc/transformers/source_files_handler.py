@@ -29,6 +29,7 @@ class SourceTextFile(object):
         self.source_location = source_location
         self.path = os.path.dirname(source_location)
         self.filename = os.path.basename(source_location)
+        self.name, self.ext = os.path.splitext(self.filename)
 
     @property
     def location(self):
@@ -102,11 +103,9 @@ class SourceFiles(object):
     @property
     def media_items(self):
         files = {}
-        if os.path.isdir(self.media_folder_path):
-            files.update({fname: self.media_folder_path + '/' + fname for fname in os.listdir(self.media_folder_path) if fname.startswith(self.article_folder_name)})
-        video_path = self.media_folder_path + '/html'
-        if os.path.isdir(video_path):
-            files.update({fname: video_path + '/' + fname for fname in os.listdir(video_path) if fname.startswith(self.article_folder_name)})
+        for path in [self.media_folder_path, self.media_folder_path + '/html']:    
+            if os.path.isdir(path):
+                files.update({fname: SourceTextFile(path + '/' + fname) for fname in os.listdir(path) if fname.startswith(self.article_folder_name)})
         return files
 
     def xml_filename(self):
