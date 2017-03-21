@@ -1,10 +1,6 @@
-# code = utf-8
+# coding: utf-8
 
 import os
-<<<<<<< HEAD
-import urllib2
-=======
->>>>>>> fded373eb3e95e301df2a69c5fa3c7bfa1d5642a
 
 from opac_proc.web import config
 
@@ -29,7 +25,7 @@ Identify the fulltexts locations from xylose, and create the structure:
 
 class SourceTextFile(object):
 
-   def __init__(self, source_location):
+    def __init__(self, source_location):
         self.source_location = source_location
         self.path = os.path.dirname(source_location)
         self.filename = os.path.basename(source_location)
@@ -59,7 +55,6 @@ class SourceFiles(object):
         return '-'.join([self.journal_folder_name, self.issue_folder_name, self.article_folder_name])
 
     @property
-
     def issue_folder_rel_path(self):
         return '/'.join([self.journal_folder_name, self.issue_folder_name])
 
@@ -79,6 +74,10 @@ class SourceFiles(object):
     def pdf_folder_path(self):
         return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_PDF_PATH, self.issue_folder_rel_path])
 
+    @property
+    def media_folder_path(self):
+        return '/'.join([config.OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH, self.issue_folder_rel_path])
+
     def _get_data_from_sgm_version(self):
         fulltext_files = {}
         if hasattr(self.xylose_article, 'fulltexts'):
@@ -90,7 +89,7 @@ class SourceFiles(object):
         return fulltext_files 
 
     def _get_data_from_sps_version(self):
-    	fulltext_files = {}
+        fulltext_files = {}
         if self.xylose_article.data_model_version == 'xml':
             fulltext_files['pdf'] = {}
             if hasattr(self.xylose_article, 'xml_languages'):
@@ -99,6 +98,16 @@ class SourceFiles(object):
                         prefix = '' if lang == self.xylose_article.original_language else lang+'_'
                         fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
         return fulltext_files
+
+    @property
+    def media_items(self):
+        files = {}
+        if os.path.isdir(self.media_folder_path):
+            files.update({fname: self.media_folder_path + '/' + fname for fname in os.listdir(self.media_folder_path) if fname.startswith(self.article_folder_name)})
+        video_path = self.media_folder_path + '/html'
+        if os.path.isdir(video_path):
+            files.update({fname: video_path + '/' + fname for fname in os.listdir(video_path) if fname.startswith(self.article_folder_name)})
+        return files
 
     def xml_filename(self):
         return self.xml_folder_path + '/' + self.article_folder_name + '.xml'

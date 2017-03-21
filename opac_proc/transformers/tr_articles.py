@@ -1,4 +1,5 @@
 # coding: utf-8
+import os
 from datetime import datetime
 
 from werkzeug.urls import url_fix
@@ -164,11 +165,12 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['htmls'] = htmls
             self.transform_model_instance['pdfs'] = pdfs
 
-        self.transform_model_instance['assets'] = {}
-
         source_files = source_files_handler.SourceFiles(xylose_article)
 
+        self.transform_model_instance['assets'] = {}
         self.transform_model_instance['assets']['pdf'] = self.assets_pdf(source_files)
+        self.transform_model_instance['assets']['media'] = self.assets_media(source_files)
+
         if source_files.xml_filename is not None:
             self.transform_model_instance['assets']['xml'] = self.xml_filename(source_files)
 
@@ -208,6 +210,35 @@ class ArticleTransformer(BaseTransformer):
                     asset.wait_registration()
                     assets_items[lang] = asset.data
         return assets_items
+
+    def assets_media(self, source_files):
+        assets = {}
+        items = []
+        for fname, file_fullpath in source_files.media_items.items():
+            name, ext = os.path.splitext(fname)
+            file_metadata = {'filename': fname, 'name': name, 'ext': ext}
+
+            metadata = source_files.article_metadata.copy()
+            metadata.update(file_metadata)
+            try:
+                pfile = open(file_fullpath, 'rb')
+            except Exception, e:
+                logger.error(u'Não foi possível abrir o arquivo {}'.format(file_fullpath))
+                continue
+            else:
+                asset = assets_handler.Asset(pfile, fname, '', metadata, source_files.bucket_name)
+                asset.register()
+                items.append((asset, fname, {'name': name, 'ext': ext}))
+
+        for asset, fname, file_data in items:
+            fname = fname.replace('.', '-DOT-')
+            asset.wait_registration()
+            assets[fname] = asset.data
+            assets[fname].update(file_data)
+
+        if len(assets) == 0:
+            assets = {'source path': source_files.media_folder_path}
+        return assets
 
     def xml_filename(self, source_files):
         if source_files.xml_filename is not None:
