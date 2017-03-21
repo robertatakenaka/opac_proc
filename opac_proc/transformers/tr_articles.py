@@ -1,4 +1,5 @@
 # coding: utf-8
+import os
 from datetime import datetime
 
 from werkzeug.urls import url_fix
@@ -162,27 +163,11 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['htmls'] = htmls
             self.transform_model_instance['pdfs'] = pdfs
 
-        self.transform_model_instance['assets'] = {}
-
         source_files = source_files_handler.SourceFiles(xylose_article)
-        assets_items = {}
-        for lang, texts_info in source_files.pdf_files.items():
-            assets_items[lang] = {'source': texts_info.source_location}
-            file_metadata = {'lang': lang}
-            file_metadata.update(source_files.article_metadata)
-            if texts_info.location is not None:
-                try:
-                    pfile = open(texts_info.location, 'rb')
-                except Exception, e:
-                    logger.error(u'Não foi possível abrir o arquivo {}'.format(texts_info.location))
-                    raise e
-                else:
-                    asset = assets_handler.Asset(pfile, 'pdf', file_metadata, source_files.bucket_name)
-                    asset.register()
-                    asset.wait_registration()
-                    assets_items[lang] = asset.data
-        self.transform_model_instance['assets']['pdf'] = assets_items
-        self.transform_model_instance['assets']['media'] = self.media(source_files)
+
+        self.transform_model_instance['assets'] = {}
+        self.transform_model_instance['assets']['pdf'] = self.assets_pdf(source_files)
+        self.transform_model_instance['assets']['media'] = self.assets_media(source_files)
 
         # pid
         if hasattr(xylose_article, 'publisher_id'):
@@ -202,8 +187,28 @@ class ArticleTransformer(BaseTransformer):
 
         return self.transform_model_instance
 
-    def media(self, source_files):
+    def assets_pdf(self, source_files):
+        assets_items = {}
+        for lang, texts_info in source_files.pdf_files.items():
+            assets_items[lang] = {'source': texts_info.source_location}
+            file_metadata = {'lang': lang}
+            file_metadata.update(source_files.article_metadata)
+            if texts_info.location is not None:
+                try:
+                    pfile = open(texts_info.location, 'rb')
+                except Exception, e:
+                    logger.error(u'Não foi possível abrir o arquivo {}'.format(texts_info.location))
+                    continue
+                else:
+                    asset = assets_handler.Asset(pfile, texts_info.filename, 'pdf', file_metadata, source_files.bucket_name)
+                    asset.register()
+                    asset.wait_registration()
+                    assets_items[lang] = asset.data
+        return assets_items
+
+    def assets_media(self, source_files):
         assets = {}
+        items = []
         for fname, file_fullpath in source_files.media_items.items():
             name, ext = os.path.splitext(fname)
             file_metadata = {'filename': fname, 'name': name, 'ext': ext}
@@ -216,11 +221,16 @@ class ArticleTransformer(BaseTransformer):
                 logger.error(u'Não foi possível abrir o arquivo {}'.format(file_fullpath))
                 continue
             else:
-                asset = assets_handler.Asset(pfile, '', metadata, source_files.bucket_name)
+                asset = assets_handler.Asset(pfile, fname, '', metadata, source_files.bucket_name)
                 asset.register()
-                asset.wait_registration()
-                assets[name] = asset.data
-                assets[name].update({'name': name, 'ext': ext})
+                items.append((asset, fname, {'name': name, 'ext': ext}))
+
+        for asset, fname, file_data in items:
+            fname = fname.replace('.', '-DOT-')
+            asset.wait_registration()
+            assets[fname] = asset.data
+            assets[fname].update(file_data)
+
         if len(assets) == 0:
             assets = {'source path': source_files.media_folder_path}
         return assets

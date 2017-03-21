@@ -93,6 +93,9 @@ services:
       - OPAC_PROC_MAIL_USERNAME=None
       - OPAC_PROC_MAIL_PASSWORD=None
 
+      - OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH=/app/data/img/revistas
+      
+
   webapp:
     images: scieloorg/opac_proc
     user: nobody
@@ -153,3 +156,5 @@ services:
       - OPAC_PROC_MAIL_USERNAME=None
       - OPAC_PROC_MAIL_PASSWORD=None
 
+      - OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH=/app/data/img/revistas
+      

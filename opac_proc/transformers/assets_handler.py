@@ -30,12 +30,12 @@ def now():
 
 class Asset(object):
 
-    def __init__(self, pfile, filetype, metadata, bucket_name):
+    def __init__(self, pfile, filename, filetype, metadata, bucket_name):
         self.pfile = pfile
         self.filetype = filetype
         self.metadata = metadata
         self.bucket_name = bucket_name
-        self.name = self.pfile.name
+        self.name = filename
         self.ID = None
         self.registered_url = None
         self.registration_error = None
@@ -88,3 +88,4 @@ class Asset(object):
         if self.registration_error is not None:
             result.update({'registration error': self.registration_error})
         return result
+
