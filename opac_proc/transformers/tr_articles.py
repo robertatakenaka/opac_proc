@@ -17,6 +17,10 @@ from opac_proc.logger_setup import getMongoLogger
 from . import source_files_handler
 from . import assets_handler
 
+from . import source_files_handler
+from . import assets_handler
+
+
 if config.DEBUG:
     logger = getMongoLogger(__name__, "DEBUG", "transform")
 else:
@@ -164,6 +168,7 @@ class ArticleTransformer(BaseTransformer):
 
         source_files = source_files_handler.SourceFiles(xylose_article)
 
+        self.transform_model_instance['assets']['pdf'] = self.assets_pdf(source_files)
         if source_files.xml_filename is not None:
             self.transform_model_instance['assets']['xml'] = self.xml_filename(source_files)
 
@@ -184,6 +189,25 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['elocation'] = xylose_article.elocation
 
         return self.transform_model_instance
+
+    def assets_pdf(self, source_files):
+        assets_items = {}
+        for lang, texts_info in source_files.pdf_files.items():
+            assets_items[lang] = {'source': texts_info.source_location}
+            file_metadata = {'lang': lang}
+            file_metadata.update(source_files.article_metadata)
+            if texts_info.location is not None:
+                try:
+                    pfile = open(texts_info.location, 'rb')
+                except Exception, e:
+                    logger.error(u'Não foi possível abrir o arquivo {}'.format(texts_info.location))
+                    continue
+                else:
+                    asset = assets_handler.Asset(pfile, texts_info.filename, 'pdf', file_metadata, source_files.bucket_name)
+                    asset.register()
+                    asset.wait_registration()
+                    assets_items[lang] = asset.data
+        return assets_items
 
     def xml_filename(self, source_files):
         if source_files.xml_filename is not None:
