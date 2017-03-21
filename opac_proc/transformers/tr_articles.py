@@ -13,19 +13,10 @@ from opac_proc.datastore.models import (
     TransformJournal)
 from opac_proc.transformers.base import BaseTransformer
 from opac_proc.extractors.decorators import update_metadata
-
 from opac_proc.web import config
 from opac_proc.logger_setup import getMongoLogger
 from . import source_files_handler
 from . import assets_handler
-
-from . import source_files_handler
-from . import assets_handler
-
-
-from . import source_files_handler
-from . import assets_handler
-
 
 if config.DEBUG:
     logger = getMongoLogger(__name__, "DEBUG", "transform")
