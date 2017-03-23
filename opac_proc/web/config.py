@@ -161,6 +161,11 @@ OPAC_PROC_ASSETS_SOURCE_MEDIA_PATH = os.environ.get('OPAC_PROC_ASSETS_SOURCE_MED
 OPAC_PROC_ASSETS_SOURCE_XML_PATH = os.environ.get('OPAC_PROC_ASSETS_SOURCE_XML_PATH', HERE + '/_assets_source_files/xml')
 OPAC_PROC_CSS_PATH = os.environ.get('OPAC_PROC_CSS_PATH', 'article.css')
 
+OPAC_SSM_GRPC_SERVER_HOST_CLI = '192.168.1.63'
+OPAC_SSM_GRPC_SERVER_PORT = '8005'
+OPAC_SSM_GRPC_SERVER_HOST = 'homolog.ssm.scielo.org'
+
+
 # Habilitar/Desabilitar o form de registro
 WEB_REGISTRATION_ENABLED = os.environ.get('OPAC_PROC_WEB_REGISTRATION_ENABLED', 'False') == 'True'
 # True/False para requerir ou não confirmação de email no processo de registro/login

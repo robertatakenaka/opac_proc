@@ -45,7 +45,7 @@ dev_compose_build: get_opac_mongo_info
 	@docker-compose -f $(COMPOSE_FILE_DEV) build
 
 dev_compose_up: get_opac_mongo_info
-	@docker-compose -f $(COMPOSE_FILE_DEV) up -d
+	@docker-compose -f $(COMPOSE_FILE_DEV) up 
 
 dev_compose_logs: get_opac_mongo_info
 	@docker-compose -f $(COMPOSE_FILE_DEV) logs -f $1
