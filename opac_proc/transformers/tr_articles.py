@@ -49,15 +49,8 @@ class ArticleTransformer(BaseTransformer):
         self.transform_model_instance['uuid'] = uuid
         self.transform_model_instance['aid'] = uuid
 
-        self.source_files = source_files_handler.SourceFiles(xylose_article, config.OPAC_PROC_CSS_PATH)
-
-        self.queued_assets = {}
-        ssm_status = assets_handler.client_status()
-        if ssm_status is True:
-            self.queued_assets['media'] = self.queue_media_registrations()
-            self.queued_assets['xml'] = self.queue_xml_registrations()
-            self.queued_assets['pdf'] = self.queue_pdf_registrations()
-        
+        self.identify_assets(xylose_article)
+        self.register_assets()
 
         # issue
         pid = xylose_article.issue.publisher_id
@@ -174,17 +167,6 @@ class ArticleTransformer(BaseTransformer):
             self.transform_model_instance['htmls'] = htmls
             self.transform_model_instance['pdfs'] = pdfs
 
-        self.transform_model_instance['assets'] = {}
-        
-        assets_sources = {}
-        assets_sources['registration'] = ssm_status
-        assets_sources['htmls'] = htmls
-        assets_sources['pdfs'] = self.assets_sources_pdf()
-        assets_sources['media'] = self.assets_sources_media()
-        if self.source_files.xml_file is not None:
-            assets_sources['xml'] = self.assets_sources_xml()
-        self.transform_model_instance['assets']['sources'] = assets_sources
-
         # pid
         if hasattr(xylose_article, 'publisher_id'):
             self.transform_model_instance['pid'] = xylose_article.publisher_id
@@ -204,168 +186,136 @@ class ArticleTransformer(BaseTransformer):
         # assets
         self.transform_model_instance['htmls'] = None
         self.transform_model_instance['pdfs'] = None
-        registered_assets = {}
-        if len(queued_assets) > 0:
-            registered_assets['pdfs'] = self.registered_assets_pdf(queued_assets.get('pdf'))
-            if self.source_files.xml_file is not None:
-                registered_assets['xml'] = self.registered_assets_xml(queued_assets.get('xml'))
-                queued_assets['htmls'] = self.queue_generated_html_registrations(self.registered_assets_media(queued_assets.get('media')))
-                registered_assets['htmls'] = self.registered_assets_generated_html(queued_assets['htmls'])
+        self.transform_model_instance['assets'] = {}
+        self.transform_model_instance['assets']['ssm'] = assets_handler.client_status()
+        self.transform_model_instance['assets']['q'] = len(self.assets_items)
+        self.transform_model_instance['assets']['erros'] = self.assets_errors
 
-            self.transform_model_instance['assets']['registered'] = registered_assets
-            
-            self.transform_model_instance['pdfs'] = []
-            for lang, asset_data in registered_assets['pdfs'].items():
-                self.transform_model_instance['pdfs'].append({'language': lang, 'type': 'pdf', 'url': asset_data.get('url')})
-
-            if self.source_files.xml_file is not None:
-                self.transform_model_instance['xml'] = registered_assets['xml'].get('url')
-                self.transform_model_instance['htmls'] = []
-                for lang, asset_data in registered_assets['htmls'].items():
-                    self.transform_model_instance['htmls'].append({'language': lang, 'type': 'html', 'url': asset_data.get('url')})
-
+        self.report_assets_sources()
+        self.finish_assets_registrations()
+        self.report_registered_assets()        
         return self.transform_model_instance
 
-    def assets_sources_pdf(self):
-        assets_items = {}
-        for lang, source_file in self.source_files.pdf_files.items():
-            assets_items[lang] = source_file.source_location
-        return assets_items
-
-    def queue_pdf_registrations(self):
-        assets_items = {}
+    def identify_assets(self, xylose_article):
+        self.source_files = source_files_handler.SourceFiles(xylose_article, config.OPAC_PROC_CSS_PATH)
+        self.identify_media_assets()
+        self.identify_pdf_assets()
+        self.identify_xml_assets()
+        self.assets_items = self.media_assets_items + self.pdf_assets_items + self.xml_assets_items
+        self.assets_errors = self.media_assets_errors + self.pdf_assets_errors + self.xml_assets_errors
+            
+    def identify_pdf_assets(self):
+        self.pdf_assets_items = []
+        self.pdf_assets_errors = []
         for lang, source_file in self.source_files.pdf_files.items():
             metadata = self.source_files.article_metadata.copy()
             metadata.update({'aid': self.article_uuid})
             metadata.update({'lang': lang})
-            if source_file.location is not None:
-                try:
-                    pfile = open(source_file.location, 'rb')
-                except Exception, e:
-                    logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
-                    continue
-                else:
-                    asset = assets_handler.Asset(pfile, source_file.filename, 'pdf', metadata, self.source_files.bucket_name)
-                    if asset.register():
-                        assets_items[lang] = asset
-        return assets_items
+            if source_file.pfile is not None:
+                self.pdf_assets_items.append(assets_handler.Asset(source_file.pfile, source_file.filename, 'pdf', metadata, self.source_files.bucket_name))
+            else:
+                msg = u'Não foi possível ler o arquivo {} correspondente a {} {} '.format(source_file.source_location, 'pdf', lang)
+                self.pdf_assets_errors.append(msg)
+                logger.error(msg)
 
-    def registered_assets_pdf(self, queued_assets_pdf):
-        registered = {}
-        queued = queued_assets_pdf.copy()
-        while len(registered) < len(queued):
-            for lang, asset in queued.items():
-                if not lang in registered.keys() and asset.status == 'registered':
-                    registered[lang] = asset.data
-                    del queued[lang]
-        return registered
-
-    def assets_sources_media(self):
-        assets_items = {}
+    def identify_media_assets(self):
+        self.media_assets_items = []
+        self.media_assets_errors = []
         for href, source_file in self.source_files.media_files.items():
-            assets_items[href.replace('.', '-DOT-')] = source_file.source_location
-        return assets_items
-
-    def queue_media_registrations(self):
-        assets = {}
-        for fname, source_file in self.source_files.media_files.items():
             metadata = self.source_files.article_metadata.copy()
-            metadata.update({'filename': fname, 'name': source_file.name, 'ext': source_file.ext})
             metadata.update({'aid': self.article_uuid})
-            
-            if source_file.location is None:
-                asset = {'error message': u'Não encontrado o arquivo {}'.format(source_file.source_location)}
+            metadata.update({'label': href})
+            if source_file.pfile is not None:
+                self.media_assets_items.append(assets_handler.Asset(source_file.pfile, source_file.filename, '', metadata, self.source_files.bucket_name))
             else:
-                try:
-                    pfile = open(source_file.location, 'rb')
-                except Exception, e:
-                    logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
-                    continue
-                else:
-                    asset = assets_handler.Asset(pfile, fname, '', metadata, self.source_files.bucket_name)
-                    asset.register()
-                    assets[fname] = asset
-        return assets
+                msg = u'Não foi possível ler o arquivo {} correspondente a {} {} '.format(source_file.source_location, 'media', href)
+                self.media_assets_errors.append(msg)
+                logger.error(msg)
 
-    def registered_assets_media(self, queued_assets_media):
-        registered = {}
-        queued = queued_assets_media.copy()
-        while len(registered) < len(queued):
-            for fname, asset in queued.items():
-                if not fname in registered.keys() and asset.status == 'registered':
-                    label = fname.replace('.', '-DOT-')
-                    registered[label] = asset.data
-                    source_file = self.source_files.media_files.get(fname)
-                    registered[label].update({'name': source_file.name, 'ext': source_file.ext})
-                    del queued[fname]
-        return registered
-
-    def assets_sources_xml(self):
+    def identify_xml_assets(self):
+        self.xml_assets_items = []
+        self.xml_assets_errors = []
         if self.source_files.xml_file is not None:
-            return self.source_files.xml_file.source_location
-
-    def queue_xml_registrations(self):
-        if self.source_files.xml_file is None:
-            return None
-        ret = None
-        metadata = self.source_files.article_metadata.copy()
-        metadata.update(file_metadata)
-        metadata.update({'aid': self.article_uuid})
-            
-        source_file = self.source_files.xml_file
-        if source_file.location is not None:
-            try:
-                pfile = open(source_file.location, 'rb')
-            except Exception, e:
-                logger.error(u'Não foi possível abrir o arquivo {}'.format(source_file.source_location))
+            metadata = self.source_files.article_metadata.copy()
+            metadata.update({'aid': self.article_uuid})
+            metadata.update({'label': 'xml'})
+            source_file = self.source_files.xml_file
+            if source_file.pfile is not None:
+                self.xml_assets_items.append(assets_handler.Asset(source_file.pfile, source_file.filename, 'xml', metadata, self.source_files.bucket_name))
             else:
-                asset = assets_handler.Asset(pfile, source_file.name, 'xml', metadata, self.source_files.bucket_name)
-                asset.register()
-                ret = asset
-        return ret
-        
-    def registered_assets_xml(self, queued_assets_xml):
-        if queued_assets_xml is not None:
-            while queued_assets_xml.status == 'queued':
-                pass
-            return queued_assets_xml.data if queued_assets_xml.status == 'registered' else None
+                msg = u'Não foi possível ler o arquivo {} correspondente a {}'.format(source_file.source_location, 'xml')
+                self.xml_assets_errors.append(msg)
+                logger.error(msg)
 
-    def queue_generated_html_registrations(self, queued_assets):
-        assets = {}
-        media = queued_assets.get('media')
-        if self.source_files.generated_html is not None:
-            if self.source_files.generated_html.get('generated htmls') is not None:
-                for lang, content in self.source_files.generated_html.items():
-                    if media is not None:
-                        for media_name, media_data in media.items():
-                            url = media_data.get('url')
-                            if url is not None:
-                                href_content = 'href="{}"'.format(media_name.replace('-DOT-', '.'))
-                                ssm_href_content = 'href="{}"'.format(data.get('url'))
-                                content = html.replace(href_content, ssm_href_content)
-                    pfile = StringIO.StringIO(content.encode('utf-8'))
-                            
-                    filename = lang+'_'+self.source_files.article_folder_name + '.html'
-                        
-                    metadata = self.source_files.article_metadata.copy()
-                    metadata.update({'aid': self.article_uuid})
-                    
-                    try:
-                        asset = assets_handler.Asset(pfile, filename, 'html', metadata, self.source_files.bucket_name)
-                    except Exception, e:
-                        logger.error(u'Não foi possível ler o arquivo html gerado correspondente a {}'.format(filename))
-                        continue
-                    else:
+    def register_assets(self):
+        ssm_status = assets_handler.client_status()   
+        if ssm_status is True:
+            for asset in self.assets_items:
+                asset.register()
+        else:
+            logger.error(ssm_status)
+
+    def generate_html_assets(self):
+        self.html_assets_items = []
+        html_files = self.source_files.generated_html_files(self.registered_media_assets)
+        if html_files is not None:
+            for lang, pfile in html_files.items():
+                filename = lang+'_'+self.source_files.article_folder_name + '.html'                        
+                metadata = self.source_files.article_metadata.copy()
+                metadata.update({'aid': self.article_uuid})
+                metadata.update({'lang': lang})
+                self.html_assets_items.append(assets_handler.Asset(pfile, filename, 'html', metadata, self.source_files.bucket_name))
+
+        self.html_assets_errors = self.source_files.generated_html_errors
+        for msg in self.html_assets_errors:
+            logger.error(msg)
+
+    def report_assets_sources(self):
+        self.transform_model_instance['assets']['sources'] = {}
+        self.transform_model_instance['assets']['sources']['pdfs'] = [source_file.source_location for source_file in self.source_files.pdf_files.values()]
+        self.transform_model_instance['assets']['sources']['media'] = [source_file.source_location for source_file in self.source_files.media_files.values()]
+        self.transform_model_instance['assets']['sources']['xml'] = self.source_files.xml_file.source_location if self.source_files.xml_file is not None else None
+
+    def finish_assets_registrations(self):        
+        if len(self.assets_items) > 0:
+            logger.info('registration - init')
+            finished = False
+            make_html = len(self.xml_assets_items) > 0
+
+            while not finished:
+                
+                registering_media = len([True for asset in self.media_assets_items if asset.status() == 'queued'])
+                logger.info(u'Registrando {} mídias'.format(registering_media))
+
+                if make_html and registering_media == 0:
+                    self.registered_media_assets = {asset.name.replace('.', '-DOT-'): asset.url for asset in self.media_assets_items}
+                    self.generate_html_assets()
+                    for asset in self.html_assets_items:
                         asset.register()
-                        assets[lang] = asset
-        return assets
+                    self.assets_items.extend(self.html_assets_items)
+                    make_html = False
+                
+                registering = len([True for asset in self.assets_items if asset.status() == 'queued'])
+                logger.info(u'Registrando {} ativos'.format(registering))
+                
+                finished = make_html is False and registering == 0
+            logger.info('registration - finish')
+
+    def report_registered_assets(self):
+        self.transform_model_instance['pdfs'] = []
+        self.transform_model_instance['htmls'] = []
         
-    def registered_assets_generated_html(self, queued_assets_generated_html):
-        registered = {}
-        queued = queued_assets_generated_html.copy()
-        while len(registered) < len(queued):
-            for lang, asset in queued.items():
-                if not lang in registered.keys() and asset.status == 'registered':
-                    registered[lang] = asset.data
-                    del queued[lang]
-        return registered
+        for asset in self.assets_items:
+            if asset.status() == 'registered':
+                data = {}
+                data['type'] = asset.filetype
+                data['language'] = asset.metadata.get('lang')
+                data['url'] = asset.url
+                if asset.filetype == 'pdf':
+                    self.transform_model_instance['pdfs'].append(data)
+                elif asset.filetype == 'html':
+                    self.transform_model_instance['htmls'].append(data)
+                elif asset.filetype == 'xml':
+                    self.transform_model_instance['xml'] = asset.url
+            else:
+                logger.error(asset.error_message)

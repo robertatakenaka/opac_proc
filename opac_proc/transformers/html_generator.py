@@ -26,29 +26,31 @@ def get_htmlgenerator(xmlpath, no_network, no_checks, css):
 
 
 def generate_html(xml, css):
-    error_message = []
+    errors = []
     files = {}
     html_generator = None
     try:
         html_generator = get_htmlgenerator(xml, False, True, css)
     except XMLError as e:
-        error_message = 'Error generating {}. '.format(xml)
+        errors.append('Error getting htmlgenerator for {}. '.format(xml))
 
-    if html_generator is not None:
-        try:
-            for lang, trans_result in html_generator:
-                files[lang] = etree.tostring(trans_result, pretty_print=True,
-                                            encoding='utf-8', method='html',
-                                            doctype=u"<!DOCTYPE html>")
-                files[lang] = files[lang].decode('utf-8')
+    try:
+        for lang, trans_result in html_generator:
+            try:
+                s = etree.tostring(trans_result, 
+                                    pretty_print=True,
+                                    encoding='utf-8', method='html',
+                                    doctype=u"<!DOCTYPE html>")
 
-        except TypeError as e:
-            error_message = 'Error generating html ({}) for {}. '.format(lang, xml)
-        except:
-            error_message = 'Unknown Error generating html ({}) for {}. '.format(lang, xml)
+            except Exception as e:
+                errors.append('Error converting etree {} to string. '.format(lang))
+            else:
+                try:
+                    files[lang] = s.decode('utf-8')
+                except Exception as e:
+                    errors.append('Error decoding html {} to string. '.format(lang))
 
-    if len(files) > 0:
-        return (True, files)
-    else:
-        return (False, error_message)
-    
+    except Exception as e:
+        errors.append('Error generating html for {}. '.format(xml))
+
+    return files, errors    

@@ -38,7 +38,6 @@ class Asset(object):
         self.bucket_name = bucket_name
         self.name = filename
         self.ID = None
-        self.registered_url = None
         self.error_message = None
         self._status = None
         
@@ -59,10 +58,9 @@ class Asset(object):
         return ssm_status
 
     def wait_registration(self):
-        while self.status == 'queued':
+        while self.status() == 'queued':
             time.sleep(10)
 
-    @property
     def status(self):
         if self._status == 'queued':
             if cli.get_task_state(self.ID) in ['SUCESS', 'SUCCESS']:
@@ -71,11 +69,17 @@ class Asset(object):
 
     @property
     def data(self):
-        if self.status == 'error':
+        if self.status() == 'error':
             return self.error_message
-        if self.status == 'queued':
+        if self.status() == 'queued':
             self.wait_registration()
-        if self.status == 'registered':
+        if self.status() == 'registered':
             result, data = cli.get_asset_info(self.ID)
             if result is True:
                 return data
+
+    @property
+    def url(self):
+        if self.data is not None:
+            return self.data.get('url')
+

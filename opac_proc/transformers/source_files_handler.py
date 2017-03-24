@@ -37,6 +37,15 @@ class SourceTextFile(object):
         if os.path.isfile(self.source_location):
             return self.source_location
 
+    @property
+    def pfile(self):
+        if self.location is not None:
+            try:
+                _pfile = open(self.location, 'rb')
+                return _pfile
+            except Exception, e:            
+                pass
+
 
 class SourceFiles(object):
 
@@ -46,7 +55,8 @@ class SourceFiles(object):
         self.journal_folder_name = self.xylose_article.journal.acronym.lower()
         self.article_folder_name = self.xylose_article.file_code()
         self.css = css
-        self._generated_html = None
+        self._generated_html_items = None
+        self.generated_html_errors = None
         self.setUp()
 
     def setUp(self):
@@ -90,9 +100,10 @@ class SourceFiles(object):
         if hasattr(self.xylose_article, 'fulltexts'):
             pdf_url_items = self.xylose_article.fulltexts().get('pdf')
             fulltext_files['pdf'] = {}
-            for lang in pdf_url_items.keys():
-                prefix = '' if lang != self.xylose_article.original_language else lang+'_'
-                fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
+            if pdf_url_items is not None:
+                for lang in pdf_url_items.keys():
+                    prefix = '' if lang != self.xylose_article.original_language else lang+'_'
+                    fulltext_files['pdf'][lang] = SourceTextFile('{}/{}{}.pdf'.format(self.pdf_folder_path, prefix, self.article_folder_name))
         return fulltext_files 
 
     def _get_data_from_sps_version(self):
@@ -120,18 +131,35 @@ class SourceFiles(object):
         if self.xylose_article.data_model_version == 'xml':
             return SourceTextFile(self.xml_folder_path + '/' + self.article_folder_name + '.xml')
 
-    def generate_html(self):
-        self._generated_html = None
+    def generate_htmls(self):
+        self._generated_html_items = None
+        self.generated_html_errors = None
         if self.xml_file is not None:
-            generated, result = html_generator.generate_html(self.xml_file.location, self.css)
-            self._generated_html = {}
-            if generated is True:
-                self._generated_html['generated htmls'] = result
-            else:
-                self._generated_html['generated html errors'] = result
+            files, errors = html_generator.generate_html(self.xml_file.location, self.css)
+            self._generated_html_items = files
+            self.generated_html_errors = errors
 
     @property
-    def generated_html(self):
-        if self._generated_html is None:
-            self.generate_html()
-        return self._generated_html
+    def generated_html_items(self):
+        if self._generated_html_items is None:
+            self.generate_htmls()
+        return self._generated_html_items
+
+    def generated_html_files(self, replacements=None):
+        result = self.generated_html_items
+        if result is not None:
+            result = {}
+            for lang, content in self.generated_html_items.items():
+                if replacements is not None:
+                    for media_name, url in replacements.items():
+                        href_content = 'href="{}"'.format(media_name.replace('-DOT-', '.'))
+                        ssm_href_content = 'href="{}"'.format(url)
+                        content = content.replace(href_content, ssm_href_content)
+                try:
+                    result[lang] = StringIO.StringIO(content.encode('utf-8'))
+                except:
+                    if self.generated_html_errors is None:
+                        self.generated_html_errors = []
+                    self.generated_html_errors.append(u'Não foi possível gerar pfile correspondente a {} {}'.format('html', lang))
+        return result
+                    
